@@ -456,28 +456,127 @@ if show_regime:
 st.divider()
 
 # ── 수익 구조 설명 ─────────────────────────────────────────────────────
-with st.expander("📐 수익 구성 요소 상세 (기간 말 기준)"):
-    usdkrw_f  = last["usdkrw"]
-    trykrw_f  = last["trykrw"]
+with st.expander("📐 수익 구성 요소 상세 — 계산식 및 설계 근거"):
+    usdkrw_f = last["usdkrw"]
+    trykrw_f = last["trykrw"]
+    t_f      = last["t"]
 
-    us_coupon_eok  = last["us_coupon_usd"] * usdkrw_f / usdkrw_0 * 100 * eok
-    us_fx_eok      = (usdkrw_f - usdkrw_0) / usdkrw_0 * 100 * eok
-    try_coupon_eok = last["try_coupon_try"] * trykrw_f / usdkrw_0 * 100 * eok
-    try_fx_eok     = LEV_RATIO * usdtry_0 * (trykrw_f - trykrw_0) / usdkrw_0 * 100 * eok
-    borrow_eok     = -(last["repay_krw"] - LEV_RATIO * usdkrw_0) / usdkrw_0 * 100 * eok
+    # 차트 분해 공식과 동일한 기준으로 통일
+    us_coup_pct = us_c * t_f * 100
+    us_fx_pct   = (1 + us_c * t_f) * (usdkrw_f - usdkrw_0) / usdkrw_0 * 100
+    tc_pct      = try_c * t_f * LEV_RATIO * 100
+    tf_pct      = LEV_RATIO * usdtry_0 * (1 + try_c * t_f) * (trykrw_f - trykrw_0) / usdkrw_0 * 100
+    bor_pct     = -(last["repay_krw"] - LEV_RATIO * usdkrw_0) / usdkrw_0 * 100
 
-    rows = {
-        "항목":   ["미국채 쿠폰",   "달러 환차손익",  "리라채 쿠폰",    "리라 환차손익",  "차입 비용(이자+환율)",  "합계"],
-        "전략 A": [f"{us_coupon_eok:+.2f}억", f"{us_fx_eok:+.2f}억", "-", "-", "-", f"{last['us_eok']:+.2f}억"],
-        "전략 B": [f"{us_coupon_eok:+.2f}억", f"{us_fx_eok:+.2f}억", f"{try_coupon_eok:+.2f}억", f"{try_fx_eok:+.2f}억", f"{borrow_eok:+.2f}억", f"{last['lev_eok']:+.2f}억"],
+    us_coup_e = us_coup_pct * eok
+    us_fx_e   = us_fx_pct   * eok
+    tc_e      = tc_pct      * eok
+    tf_e      = tf_pct      * eok
+    bor_e     = bor_pct     * eok
+    alpha_pct = tc_pct + tf_pct + bor_pct
+
+    # ── 요약 테이블 ────────────────────────────────────────────────────
+    tbl_data = {
+        "구분":    ["전략 A", "전략 A", "알파", "알파", "알파", "—", "전략 A 합계", "알파 합계", "전략 B 합계"],
+        "항목":    ["① 미국채 쿠폰", "② 달러 환율", "③ 리라채 쿠폰", "④ 리라 환율", "⑤ 차입 비용",
+                   "─────────", "전략 A", "알파", "전략 B"],
+        "수익률":  [f"{us_coup_pct:+.2f}%", f"{us_fx_pct:+.2f}%",
+                   f"{tc_pct:+.2f}%", f"{tf_pct:+.2f}%", f"{bor_pct:+.2f}%",
+                   "", f"{last['us_ret']:+.2f}%", f"{alpha_pct:+.2f}%", f"{last['lev_ret']:+.2f}%"],
+        "손익(억)": [f"{us_coup_e:+.2f}억", f"{us_fx_e:+.2f}억",
+                    f"{tc_e:+.2f}억", f"{tf_e:+.2f}억", f"{bor_e:+.2f}억",
+                    "", f"{last['us_eok']:+.2f}억", f"{alpha_pct*eok:+.2f}억", f"{last['lev_eok']:+.2f}억"],
     }
-    st.table(pd.DataFrame(rows).set_index("항목"))
+    st.table(pd.DataFrame(tbl_data).set_index("항목"))
 
     st.caption(
-        f"진입 환율: USD/KRW {usdkrw_0:,.0f}  |  USD/TRY {usdtry_0:.2f}  |  TRY/KRW {trykrw_0:.2f}원\n"
-        f"현재 환율: USD/KRW {usdkrw_f:,.0f}  |  TRY/KRW {trykrw_f:.2f}원  "
+        f"진입 환율: USD/KRW {usdkrw_0:,.0f}  |  USD/TRY {usdtry_0:.2f}  |  TRY/KRW {trykrw_0:.3f}원  |  "
+        f"현재 환율: USD/KRW {usdkrw_f:,.0f}  |  TRY/KRW {trykrw_f:.3f}원  "
         f"(리라 {(trykrw_f/trykrw_0 - 1)*100:+.1f}%)"
     )
+
+    st.markdown("---")
+    st.markdown("##### 📌 항목별 계산식 상세 및 설계 근거")
+
+    explanations = [
+        (
+            "① 미국채 쿠폰",
+            f"{us_c*100:.2f}%/년 × {t_f:.2f}년 = **{us_coup_pct:+.2f}%** ({us_coup_e:+.2f}억)",
+            f"진입일 고정 쿠폰율 {us_c*100:.2f}% × 경과 기간 {t_f:.2f}년",
+            (
+                "HTM(만기보유) 기준에서 쿠폰 이자는 시간에 비례해 선형으로 발생합니다. "
+                "환율 효과를 쿠폰 수치에 섞으면, 달러가 강세일 때 쿠폰이 실제보다 크게 보이고 "
+                "약세일 때 작게 보이는 착시가 생깁니다. "
+                "순수 이자 수익만 분리해야 '쿠폰 자체'의 기여도를 정확히 볼 수 있습니다. "
+                "환율 효과는 ② 항목에서 따로 계산합니다."
+            ),
+        ),
+        (
+            "② 달러 환율 손익",
+            (f"(1 + {us_coup_pct:.2f}%) × ({usdkrw_f:,.0f} ÷ {usdkrw_0:,.0f} − 1) "
+             f"= **{us_fx_pct:+.2f}%** ({us_fx_e:+.2f}억)"),
+            f"만기 회수 달러(원금 1 + 쿠폰 {us_coup_pct/100:.4f}달러) 전체에 USD/KRW 변동률 적용",
+            (
+                "만기에 회수하는 달러 자산은 원금(1달러)만이 아니라 쿠폰이 붙은 (1 + 쿠폰)달러 전체입니다. "
+                "원금에만 환율을 적용하면 쿠폰 부분의 원화 환산 손익을 빠뜨리게 됩니다. "
+                f"따라서 (1 + 쿠폰율) × (USD/KRW 변동률)로 계산합니다. "
+                f"현재 달러는 {(usdkrw_f/usdkrw_0-1)*100:+.1f}% 변동했으므로, "
+                f"원금에만 적용하면 {(usdkrw_f/usdkrw_0-1)*100:+.2f}%지만 "
+                f"쿠폰 포함 자산 기준으로는 {us_fx_pct:+.2f}%가 됩니다."
+            ),
+        ),
+        (
+            "③ 리라채 쿠폰",
+            (f"{try_c*100:.2f}%/년 × {t_f:.2f}년 × {LEV_RATIO*100:.0f}% 레버리지 "
+             f"= **{tc_pct:+.2f}%** ({tc_e:+.2f}억)"),
+            f"리라채 쿠폰율 {try_c*100:.2f}% × 기간 {t_f:.2f}년 × 레버리지 비율 {LEV_RATIO*100:.0f}%",
+            (
+                f"투자원금의 {LEV_RATIO*100:.0f}%에 해당하는 달러를 차입해 TRY로 환전·투자했으므로 "
+                "레버리지 비율을 곱해 원화 원금 기준 기여도로 환산합니다. "
+                "TRY 이자는 리라화 기준으로 발생하며, TRY/KRW 환율 효과는 ④ 항목에서 분리합니다. "
+                f"고금리({try_c*100:.2f}%)가 이 전략의 핵심 수익원이지만, "
+                "리라 약세 시 ④에서 대부분 상쇄됩니다."
+            ),
+        ),
+        (
+            "④ 리라 환율 손익",
+            (f"{LEV_RATIO*100:.0f}% × {usdtry_0:.2f} × (1 + {tc_pct:.2f}%) "
+             f"× ({trykrw_f:.3f} ÷ {trykrw_0:.3f} − 1) = **{tf_pct:+.2f}%** ({tf_e:+.2f}억)"),
+            f"TRY 자산 전체(리라채 원금 + 쿠폰 포함)에 TRY/KRW 변동률 적용",
+            (
+                "만기에 회수하는 TRY 자산은 리라채 원금 + 리라 쿠폰의 합계입니다. "
+                f"달러→리라 환전 수량(LEV_RATIO × 진입 USD/TRY = {LEV_RATIO*usdtry_0:.2f} TRY)에 "
+                "쿠폰까지 더한 전체 TRY에 TRY/KRW 변동률을 적용해야 실제 원화 환산 손익이 정확합니다. "
+                f"현재 TRY/KRW는 {(trykrw_f/trykrw_0-1)*100:+.1f}% 변동했고, "
+                f"이것이 레버리지 규모에 곱해져 {tf_pct:+.2f}%의 손익이 됩니다."
+            ),
+        ),
+        (
+            "⑤ 차입 비용",
+            (f"−[{LEV_RATIO*100:.0f}% × (1 + {LOAN_RATE*100:.1f}% × {t_f:.2f}년) × {usdkrw_f:,.0f} "
+             f"− {LEV_RATIO*100:.0f}% × {usdkrw_0:,.0f}] ÷ {usdkrw_0:,.0f} "
+             f"= **{bor_pct:+.2f}%** ({bor_e:+.2f}억)"),
+            "달러 상환 시 원화 부담(원금+이자) − 차입 시 원화 수취액",
+            (
+                f"차입 비용은 두 가지 효과의 합산입니다. "
+                f"① 순수 이자: {LOAN_RATE*100:.1f}%/년 × {t_f:.2f}년 = {LOAN_RATE*t_f*100:.2f}%. "
+                f"② 달러 환율 효과: 달러가 강세이면 상환할 달러의 원화 가치가 올라 비용이 증가하고, "
+                "약세이면 감소합니다. "
+                "이 두 효과를 분리하지 않고 '만기 상환 원화 총액 − 차입 시 원화 금액'으로 한 번에 계산하는 이유는, "
+                "법인 입장에서 실질 부담(이자+환율 모두 포함)이 중요하기 때문입니다."
+            ),
+        ),
+    ]
+
+    for title, formula, formula_detail, reason in explanations:
+        col1, col2 = st.columns([1, 1.55])
+        with col1:
+            st.markdown(f"**{title}**")
+            st.markdown(formula)
+            st.caption(formula_detail)
+        with col2:
+            st.info(f"💡 **왜 이 계산식인가?**\n\n{reason}")
+        st.divider()
 
 # ── 투자 조건 요약 ──────────────────────────────────────────────────────
 with st.expander("📋 투자 조건 전체 요약"):
